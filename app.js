@@ -757,7 +757,11 @@ const state = {
   manualQuery: '',
   financeQuery: '',
   financeStatus: '',
-  financeArea: ''
+  financeArea: '',
+  clientPayment: 'todos',
+  serviceQuery: '',
+  serviceArea: '',
+  serviceExpandedId: null
 };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -1231,6 +1235,32 @@ async function copiarCodigo(codigo) {
   }
 }
 
+async function copiarTexto(texto, mensagem = 'Texto copiado.') {
+  const valor = String(texto || '').trim();
+  if (!valor) return;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(valor);
+    } else {
+      const area = document.createElement('textarea');
+      area.value = valor;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+    }
+
+    showToast(mensagem);
+  } catch (error) {
+    console.error('Erro ao copiar texto:', error);
+    showToast('Não foi possível copiar o texto.');
+  }
+}
+
 function requestRow(r) {
   return `
     <tr>
@@ -1310,7 +1340,8 @@ function calculistaDashboard() {
   const calculo = rows.filter(r => r.status === 'EM_CÁLCULO');
   const revisao = rows.filter(r => estaEmRevisao(r.status));
   const atrasadas = abertas.filter(r => daysTo(r.prazo) < 0);
-  const concluidas = rows.filter(r => r.status === 'CONCLUÍDO').length;
+  const concluidas = rows.filter(r => r.status === 'CONCLUÍDO');
+  const emAndamento = rows.filter(r => r.status !== 'CONCLUÍDO');
 
   const tarefaRow = r => `
     <tr data-open-calculista="${r.id}" style="cursor:pointer">
@@ -1323,6 +1354,19 @@ function calculistaDashboard() {
       <td>${r.prioridade}</td>
     </tr>`;
 
+  const tabela = lista => lista.length ? `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th><th>Cliente</th><th>Serviço</th><th>Processo</th><th>Prazo</th><th>Status</th><th>Prioridade</th>
+          </tr>
+        </thead>
+        <tbody>${lista.map(tarefaRow).join('')}</tbody>
+      </table>
+    </div>` : `
+    <div class="empty">Nenhuma solicitação nesta categoria.</div>`;
+
   return pageHead(
     `Olá, ${currentProfile?.nome || 'Calculista'}`,
     'Minha produção — solicitações atribuídas a você.',
@@ -1333,7 +1377,7 @@ function calculistaDashboard() {
       ${kpi('Em cálculo', calculo.length, 'Trabalhos em andamento')}
       ${kpi('Em revisão', revisao.length, 'Aguardando conferência')}
       ${kpi('Atrasadas', atrasadas.length, 'Exigem atenção')}
-      ${kpi('Concluídas', concluidas, 'Histórico da sua produção')}
+      ${kpi('Concluídas', concluidas.length, 'Histórico da sua produção')}
     </div>
 
     <section class="card calculista-flow" style="margin-top:18px">
@@ -1354,25 +1398,35 @@ function calculistaDashboard() {
       </div>
     </section>
 
-    <section class="card" style="margin-top:18px">
+    <section class="card calculista-production" style="margin-top:18px">
       <div class="card-head">
         <div>
           <h2>Minhas solicitações</h2>
           <p class="muted" style="margin-top:4px">Abra uma solicitação para consultar documentos, orientações e executar a próxima etapa.</p>
         </div>
       </div>
-      ${rows.length ? `
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Código</th><th>Cliente</th><th>Serviço</th><th>Processo</th><th>Prazo</th><th>Status</th><th>Prioridade</th>
-              </tr>
-            </thead>
-            <tbody>${rows.map(tarefaRow).join('')}</tbody>
-          </table>
-        </div>` : `
-        <div class="empty">Nenhuma solicitação foi atribuída a você.</div>`}
+
+      <div class="production-section production-section-active">
+        <div class="production-section-head">
+          <div>
+            <strong>Em andamento</strong>
+            <small>Demandas que ainda não foram concluídas.</small>
+          </div>
+          <span class="status info">${emAndamento.length}</span>
+        </div>
+        ${tabela(emAndamento)}
+      </div>
+
+      <div class="production-section production-section-completed">
+        <div class="production-section-head">
+          <div>
+            <strong>Concluídas</strong>
+            <small>Histórico dos cálculos já encerrados.</small>
+          </div>
+          <span class="status concluido">${concluidas.length}</span>
+        </div>
+        ${tabela(concluidas)}
+      </div>
     </section>
   `;
 }
@@ -2773,6 +2827,134 @@ function atualizarFinanceiroFiltrado() {
   }
 }
 
+function renderServiceReferenceList() {
+  const query = String(state.serviceQuery || '').trim().toLowerCase();
+  const areaFiltro = String(state.serviceArea || '').trim();
+
+  const usos = new Map();
+  db.requests.forEach(r => {
+    if (r.tipoId) {
+      const lista = usos.get(r.tipoId) || [];
+      lista.push(r);
+      usos.set(r.tipoId, lista);
+    }
+  });
+
+  const rows = db.tipos
+    .filter(tipo => tipo.ativo !== false)
+    .filter(tipo => {
+      if (!areaFiltro) return true;
+      const area = db.areas.find(item => item.id === tipo.area_id);
+      return area?.nome === areaFiltro;
+    })
+    .filter(tipo => {
+      if (!query) return true;
+      const area = db.areas.find(item => item.id === tipo.area_id);
+      const nomeArea = String(area?.nome || '').toLowerCase();
+      const nomeServico = String(tipo.nome || '').toLowerCase();
+
+      return nomeServico.includes(query) || nomeArea.includes(query);
+    })
+    .sort((a, b) => {
+      const areaA = db.areas.find(item => item.id === a.area_id);
+      const areaB = db.areas.find(item => item.id === b.area_id);
+
+      return (
+        String(areaA?.nome || '').localeCompare(String(areaB?.nome || ''), 'pt-BR') ||
+        Number(a.ordem || 0) - Number(b.ordem || 0) ||
+        String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')
+      );
+    });
+
+  if (!rows.length) {
+    return `
+      <div class="empty">
+        Nenhum serviço encontrado.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Área</th>
+            <th>Serviço</th>
+            <th>Uso histórico</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(tipo => {
+            const area = db.areas.find(item => item.id === tipo.area_id);
+            const nomeArea = area?.nome || '—';
+            const solicitacoes = (usos.get(tipo.id) || []).slice().sort((a, b) =>
+              String(a.codigo || '').localeCompare(String(b.codigo || ''), 'pt-BR', { numeric: true })
+            );
+            const usosHistoricos = solicitacoes.length;
+            const expandido = state.serviceExpandedId === tipo.id;
+
+            return `
+              <tr>
+                <td>${escapeHtml(nomeArea)}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="service-reference-trigger"
+                    data-service-reference="${escapeHtml(tipo.id)}"
+                    aria-expanded="${expandido ? 'true' : 'false'}"
+                    title="${usosHistoricos ? 'Ver solicitações deste serviço' : 'Nenhuma solicitação histórica'}"
+                  >${escapeHtml(tipo.nome)}</button>
+                  ${expandido ? `
+                    <div class="service-reference-detail">
+                      ${solicitacoes.length ? `
+                        <div class="muted service-reference-detail-title">
+                          Solicitações vinculadas a este serviço
+                        </div>
+                        <div class="service-reference-codes">
+                          ${solicitacoes.map(r => `
+                            <span class="request-code service-reference-code">
+                              <button
+                                type="button"
+                                class="request-open-code"
+                                data-open="${escapeHtml(r.id)}"
+                                title="Abrir solicitação ${escapeHtml(r.codigo)}"
+                              >${escapeHtml(r.codigo)}</button>
+                              <button
+                                type="button"
+                                class="copy-code-btn"
+                                data-copy-code="${escapeHtml(r.codigo)}"
+                                aria-label="Copiar código ${escapeHtml(r.codigo)}"
+                                title="Copiar código"
+                              >⧉</button>
+                            </span>
+                          `).join('')}
+                        </div>
+                      ` : `
+                        <div class="muted">Nenhuma solicitação histórica vinculada a este serviço.</div>
+                      `}
+                    </div>
+                  ` : ''}
+                </td>
+                <td>${usosHistoricos}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary service-copy-btn"
+                    data-copy-service="${escapeHtml(tipo.nome)}"
+                    title="Copiar nome do serviço"
+                  >Copiar</button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 const views = {
 
   producao() {
@@ -3160,6 +3342,8 @@ const views = {
   },
 
   clientes() {
+    const filtroPagamento = state.clientPayment || 'todos';
+
     const names = [
       ...new Set(
         db.requests.map(
@@ -3168,6 +3352,28 @@ const views = {
       )
     ];
 
+    const clientes = names
+      .map(nome => {
+        const rs = db.requests.filter(r => r.cliente === nome);
+        const valor = rs.reduce((total, r) => total + Number(r.valor || 0), 0);
+        const recebido = rs.reduce((total, r) => total + Number(r.recebido || 0), 0);
+        const pago = recebido >= valor - 0.005;
+
+        return {
+          nome,
+          rs,
+          valor,
+          recebido,
+          pago
+        };
+      })
+      .filter(cliente => {
+        if (filtroPagamento === 'pagos') return cliente.pago;
+        if (filtroPagamento === 'nao_pagos') return !cliente.pago;
+        return true;
+      })
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+
     return (
       pageHead(
         'Clientes',
@@ -3175,10 +3381,21 @@ const views = {
       ) +
 
       `
+      <div class="card filters client-filters">
+        <div class="field" style="min-width:180px;max-width:240px;margin-bottom:0">
+          <label for="clientPaymentFilter">Pagamento</label>
+          <select id="clientPaymentFilter">
+            <option value="todos" ${filtroPagamento === 'todos' ? 'selected' : ''}>Todos</option>
+            <option value="pagos" ${filtroPagamento === 'pagos' ? 'selected' : ''}>Pagos</option>
+            <option value="nao_pagos" ${filtroPagamento === 'nao_pagos' ? 'selected' : ''}>Não pagos</option>
+          </select>
+        </div>
+      </div>
+
       <div class="card">
 
         ${
-          names.length
+          clientes.length
             ? `
               <div class="table-wrap">
                 <table>
@@ -3190,58 +3407,48 @@ const views = {
                       <th>Solicitações</th>
                       <th>Valor</th>
                       <th>Recebido</th>
+                      <th>Situação</th>
                     </tr>
                   </thead>
 
                   <tbody>
 
-                    ${names
-                      .map(n => {
-                        const rs =
-                          db.requests.filter(
-                            r =>
-                              r.cliente === n
-                          );
+                    ${clientes
+                      .map(cliente => {
+                        const r = cliente.rs[0];
 
                         return `
                           <tr
-                            data-open="${rs[0].id}"
+                            data-open="${r.id}"
                           >
                             <td>
-                              <strong>${n}</strong>
+                              <strong>${escapeHtml(cliente.nome)}</strong>
                             </td>
 
                             <td>
                               ${
-                                rs[0]
-                                  .processo ||
-                                '—'
+                                r.processo
+                                  ? escapeHtml(r.processo)
+                                  : '—'
                               }
                             </td>
 
                             <td>
-                              ${rs.length}
+                              ${cliente.rs.length}
                             </td>
 
                             <td class="money">
-                              ${money(
-                                rs.reduce(
-                                  (a, r) =>
-                                    a + r.valor,
-                                  0
-                                )
-                              )}
+                              ${money(cliente.valor)}
                             </td>
 
                             <td class="money">
-                              ${money(
-                                rs.reduce(
-                                  (a, r) =>
-                                    a +
-                                    r.recebido,
-                                  0
-                                )
-                              )}
+                              ${money(cliente.recebido)}
+                            </td>
+
+                            <td>
+                              <span class="status ${cliente.pago ? 'concluido' : 'aguardando'}">
+                                ${cliente.pago ? 'Pago' : 'Não pago'}
+                              </span>
                             </td>
 
                           </tr>
@@ -3256,7 +3463,7 @@ const views = {
             `
             : `
               <div class="empty">
-                Nenhum cliente.
+                Nenhum cliente encontrado com o filtro selecionado.
               </div>
             `
         }
@@ -3628,6 +3835,53 @@ const views = {
 
       </div>
 
+      <section class="card service-reference" style="margin-top:16px">
+        <div class="card-head">
+          <div>
+            <h2>Referência de serviços</h2>
+            <p class="muted" style="margin-top:4px">
+              Pesquise no catálogo atual para recuperar o nome exato de um serviço já utilizado em cálculos anteriores.
+            </p>
+          </div>
+          <span class="muted">${db.tipos.filter(tipo => tipo.ativo !== false).length} serviço(s)</span>
+        </div>
+
+        <div class="filters service-reference-filters" style="margin:0 0 4px;padding:14px 0 0">
+          <div class="field" style="flex:2;min-width:220px">
+            <label for="serviceReferenceSearch">Pesquisar serviço</label>
+            <input
+              id="serviceReferenceSearch"
+              class="input"
+              type="search"
+              value="${escapeHtml(state.serviceQuery || '')}"
+              placeholder="Ex.: abono, RMI, danos, atrasados..."
+              autocomplete="off"
+            >
+          </div>
+
+          <div class="field" style="flex:1;min-width:180px">
+            <label for="serviceReferenceArea">Área</label>
+            <select id="serviceReferenceArea">
+              <option value="">Todas</option>
+              ${db.areas
+                .filter(area => area.ativo !== false)
+                .sort((a, b) => Number(a.ordem || 0) - Number(b.ordem || 0))
+                .map(area => `
+                  <option
+                    value="${escapeHtml(area.nome)}"
+                    ${state.serviceArea === area.nome ? 'selected' : ''}
+                  >${escapeHtml(area.nome)}</option>
+                `)
+                .join('')}
+            </select>
+          </div>
+        </div>
+
+        <div id="serviceReferenceList">
+          ${renderServiceReferenceList()}
+        </div>
+      </section>
+
       <div
         class="notice"
         style="margin-top:16px"
@@ -3669,47 +3923,61 @@ const views = {
 
             <div class="alert-list">
 
-              <div class="alert">
+              <a class="alert system-link" href="https://abono.computum.com.br" target="_blank" rel="noopener noreferrer">
                 <div class="mark"></div>
-
                 <div>
-                  <strong>
-                    Abono Computum
-                  </strong>
-
-                  <small>
-                    https://abono.computum.com.br
-                  </small>
+                  <strong>Abono Computum</strong>
+                  <small>https://abono.computum.com.br</small>
                 </div>
-              </div>
+              </a>
 
-              <div class="alert">
+              <a class="alert system-link" href="https://diferencas.computum.com.br" target="_blank" rel="noopener noreferrer">
                 <div class="mark"></div>
-
                 <div>
-                  <strong>
-                    Diferenças Computum
-                  </strong>
-
-                  <small>
-                    https://diferencas.computum.com.br
-                  </small>
+                  <strong>Diferenças Computum</strong>
+                  <small>https://diferencas.computum.com.br</small>
                 </div>
-              </div>
+              </a>
 
-              <div class="alert">
+              <a class="alert system-link" href="https://saude.computum.com.br" target="_blank" rel="noopener noreferrer">
                 <div class="mark"></div>
-
                 <div>
-                  <strong>
-                    Saúde Computum
-                  </strong>
-
-                  <small>
-                    https://saude.computum.com.br
-                  </small>
+                  <strong>Saúde Computum</strong>
+                  <small>https://saude.computum.com.br</small>
                 </div>
-              </div>
+              </a>
+
+              <a class="alert system-link" href="https://extrairsia.computum.com.br/" target="_blank" rel="noopener noreferrer">
+                <div class="mark"></div>
+                <div>
+                  <strong>Extrator de Rubricas SIAPE</strong>
+                  <small>extrairsia.computum.com.br</small>
+                </div>
+              </a>
+
+              <a class="alert system-link" href="https://informacalc.computum.com.br/" target="_blank" rel="noopener noreferrer">
+                <div class="mark"></div>
+                <div>
+                  <strong>Editor de Informações e Pareceres Técnicos</strong>
+                  <small>informacalc.computum.com.br</small>
+                </div>
+              </a>
+
+              <a class="alert system-link" href="https://contadjus.com.br/" target="_blank" rel="noopener noreferrer">
+                <div class="mark"></div>
+                <div>
+                  <strong>ContadJus</strong>
+                  <small>Previdenciários · Atualização de Valores · Renúncia e Requisitório</small>
+                </div>
+              </a>
+
+              <a class="alert system-link" href="https://docs.google.com/spreadsheets/d/11mYA-LO5GUBtawKfY0HkMGkSHZZKRAvywEOUQRU2tkM/edit?gid=1468370044#gid=1468370044" target="_blank" rel="noopener noreferrer">
+                <div class="mark"></div>
+                <div>
+                  <strong>Planilha — organização da correção monetária</strong>
+                  <small>Google Sheets</small>
+                </div>
+              </a>
 
             </div>
 
@@ -6293,9 +6561,14 @@ document.addEventListener('keydown', event => {
       return;
     }
 
-    const calcButton = event.target.closest('[data-open-calculista]');
-    if (calcButton) {
-      openCalculistaDetail(calcButton.dataset.openCalculista);
+    const serviceReferenceButton = event.target.closest('[data-service-reference]');
+    if (serviceReferenceButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const serviceId = serviceReferenceButton.dataset.serviceReference || '';
+      state.serviceExpandedId = state.serviceExpandedId === serviceId ? null : serviceId;
+      const list = $('#serviceReferenceList');
+      if (list) list.innerHTML = renderServiceReferenceList();
       return;
     }
 
@@ -6304,6 +6577,20 @@ document.addEventListener('keydown', event => {
       event.preventDefault();
       event.stopPropagation();
       copiarCodigo(copyCodeButton.dataset.copyCode || '');
+      return;
+    }
+
+    const copyServiceButton = event.target.closest('[data-copy-service]');
+    if (copyServiceButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      copiarTexto(copyServiceButton.dataset.copyService || '', 'Serviço copiado.');
+      return;
+    }
+
+    const calcButton = event.target.closest('[data-open-calculista]');
+    if (calcButton) {
+      openCalculistaDetail(calcButton.dataset.openCalculista);
       return;
     }
 
@@ -6350,6 +6637,17 @@ document.addEventListener('keydown', event => {
       return;
     }
 
+    const serviceSearch = event.target.closest('#serviceReferenceSearch');
+    if (serviceSearch) {
+      state.serviceQuery = serviceSearch.value;
+
+      const list = $('#serviceReferenceList');
+      if (list) {
+        list.innerHTML = renderServiceReferenceList();
+      }
+      return;
+    }
+
     const q = event.target.closest('#q');
     if (q) {
       state.query = q.value;
@@ -6375,6 +6673,24 @@ document.addEventListener('keydown', event => {
   });
 
   content.addEventListener('change', event => {
+    const clientPayment = event.target.closest('#clientPaymentFilter');
+    if (clientPayment) {
+      state.clientPayment = clientPayment.value;
+      render();
+      return;
+    }
+
+    const serviceArea = event.target.closest('#serviceReferenceArea');
+    if (serviceArea) {
+      state.serviceArea = serviceArea.value;
+
+      const list = $('#serviceReferenceList');
+      if (list) {
+        list.innerHTML = renderServiceReferenceList();
+      }
+      return;
+    }
+
     const financeStatus = event.target.closest('#financeFilterStatus');
     if (financeStatus) {
       state.financeStatus = financeStatus.value;

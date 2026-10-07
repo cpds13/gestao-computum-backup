@@ -2081,3 +2081,117 @@ textarea:focus {
     font-size: 24px;
   }
 }
+
+
+/* V68 — separação discreta da produção e referência de serviços */
+.production-section {
+  margin-top: 16px;
+  padding-top: 2px;
+}
+
+.production-section + .production-section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.production-section-completed {
+  opacity: .92;
+}
+
+.production-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.production-section-head strong {
+  display: block;
+  font-size: 13px;
+  color: var(--navy);
+}
+
+.production-section-head small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.service-reference .table-wrap {
+  margin-top: 4px;
+}
+
+.service-copy-btn {
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+
+/* =========================================================
+   V69 — referência interativa de serviços e sistemas
+   ========================================================= */
+
+.service-reference-trigger {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: var(--navy);
+  font-weight: 700;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgba(168,95,67,.45);
+  text-underline-offset: 3px;
+}
+
+.service-reference-trigger:hover {
+  color: var(--teal);
+  text-decoration-color: var(--teal);
+}
+
+.service-reference-detail {
+  margin-top: 9px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--terracotta);
+  border-radius: 0 8px 8px 0;
+  background: var(--paper);
+}
+
+.service-reference-detail-title {
+  font-size: 11px;
+  margin-bottom: 7px;
+}
+
+.service-reference-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.service-reference-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--white);
+}
+
+.system-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.system-link:hover {
+  border-color: var(--terracotta);
+  box-shadow: 0 4px 14px rgba(23,43,70,.06);
+}
+
+.system-link strong,
+.system-link small {
+  display: block;
+}

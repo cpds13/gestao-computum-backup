@@ -4,7 +4,7 @@ Sistema web de gestão operacional de solicitações de cálculos judiciais.
 
 O Gestão Computum **não é um motor de cálculo**. Ele controla a operação da demanda: entrada, advogado, cliente, processo, área, tipo de serviço, calculista, prazo, documentos, produção, revisão, entrega, financeiro, retrabalho e histórico.
 
-## Estado atual — V67
+## Estado atual — V69
 
 A V54 consolida a identificação de calculistas por vínculo explícito de ID e elimina cadastros órfãos das listas operacionais. A V53 adiciona exclusão segura de usuários pelo painel administrativo. A V52 corrige a apresentação do menu e do manual do perfil Usuário. O Usuário consulta Advogados, Clientes, Processos, Calculistas e Relatórios sem permissões de edição, e recebe um manual específico de consulta e acompanhamento.
 
